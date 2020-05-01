@@ -1,6 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Lambda function to start and stop the maintenance message on target alb
-  listener.
+Description: Lambda function to start and stop the maintenance message on target alb listener.
 
 Parameters:
   TARGETALBLISTENERARN:
