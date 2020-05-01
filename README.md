@@ -24,7 +24,7 @@ Access to AWS Console with Administrative rights to spin up the CloudFormation S
 ## Triggering the Maintenance Page - via AWS Console
 1. Navigate to AWS Lambda in AWS Console and go to the section "Functions".
 2. Click on the "XXXX-StartMaintenancePageOnALB-YYYY" function that have been created by the CloudFormation Stack.
-3. Click on "Test" on the top right corner, and if it is your time triggering Create new test event. You can give it any Event Name and keep the JSON message as default, and click "Create". Click on "Test" again.
+3. Click on "Test" on the top right corner, and if it is your first time triggering, then Create a new test event. You can give it any Event Name and keep the JSON message as default, and click "Create". Click on "Test" again.
 4. You should see a green success message on the top if the Lambda function have been triggered successfully.
 5. Navigate to your target hostname, and you should see the maintenance page up and running.
 
