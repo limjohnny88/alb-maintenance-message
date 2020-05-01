@@ -1,0 +1,202 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Lambda function to start and stop the maintenance message on target alb
+  listener.
+
+Parameters:
+  TARGETALBLISTENERARN:
+    MinLength: 1
+    Description: The security group for the load balancer.
+    Type: String
+    Default: arn:aws:elasticloadbalancing:ap-southeast-1:322180973503:listener/app/test-alb/e613a3ad8cd9356b/7acbdd7aa70e5c96
+  TARGETHOSTNAMELIST:
+    MinLength: 1
+    Description: The target hostname on load balancer.
+    Type: String
+    Default: site-a.com,site-b.com,test-alb-1809226213.ap-southeast-1.elb.amazonaws.com,test.com
+  TARGETMAINTENANCEMESSAGEHTML:
+    MinLength: 1
+    Description: The maintenance page html.
+    Type: String
+    Default: "<!doctype html>\n  <html>\n  <head>\n\
+      \  <title>Site Maintenance</title>\n  <style>\n    body { text-align:\
+      \ center; padding: 50px; }\n    h1 { font-size: 30px; }\n    body { font:\
+      \ 20px Helvetica, sans-serif; color: #333; }\n    article { display: block;\
+      \ text-align: center; width: 100%; margin: 0 auto; }\n  </style>\n  </head>\n\
+      \  <body>\n  <article>\n      <h1>XXXXXXX YYYYYYY ZZZZZ (XYZ)</h1>\n \
+      \     <div>\n          <p>XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX is temporarily\
+      \ unavailable.</p>\n          <p>We are performing our scheduled maintenance\
+      \ at the moment.</p>\n          <p>Thank you for your patience.</p>\n\
+      \      </div>\n  </article>\n  </body>\n  </html>\n"
+
+Resources:
+  StartMaintenancePageOnALBRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+            - Effect: Allow
+              Action:
+              - elasticloadbalancing:DescribeRules
+              Resource: '*'
+            - Effect: Allow
+              Action:
+              - elasticloadbalancing:CreateRule
+              - elasticloadbalancing:SetRulePriorities
+              Resource:
+              - arn:aws:elasticloadbalancing:*:*:listener/app/*/*/*
+              - arn:aws:elasticloadbalancing:*:*:listener-rule/app/*/*/*/*
+  StopMaintenancePageOnALBRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+            - Effect: Allow
+              Action:
+              - elasticloadbalancing:DescribeRules
+              Resource: '*'
+            - Effect: Allow
+              Action:
+              - elasticloadbalancing:DeleteRule
+              Resource:
+              - arn:aws:elasticloadbalancing:*:*:listener/app/*/*/*
+              - arn:aws:elasticloadbalancing:*:*:listener-rule/app/*/*/*/*
+  StartMaintenancePageOnALB:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.startmaintenancepageonalb_handler
+      Runtime: python3.7
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+
+          def startmaintenancepageonalb_handler(event, context):
+              client = boto3.client('elbv2')
+
+              TARGET_ALB_LISTENER_ARN = os.environ['TARGET_ALB_LISTENER_ARN']
+              TARGET_HOSTNAME_LIST = [x.strip() for x in os.environ['TARGET_HOSTNAME_LIST'].split(",")]
+              TARGET_MAINTENANCE_MESSAGE_HTML = os.environ['TARGET_MAINTENANCE_MESSAGE_HTML']
+
+              print(TARGET_HOSTNAME_LIST)
+
+              priority = 1
+              does_rule_exists = False
+
+              current_rules_response = client.describe_rules(ListenerArn=TARGET_ALB_LISTENER_ARN)
+
+              for rule in current_rules_response['Rules']:
+                  if rule['Priority'] == str(priority):
+                     does_rule_exists = True
+
+              conditions = [
+                  {
+                      "Field": "host-header",
+                      'HostHeaderConfig': {
+                          'Values': TARGET_HOSTNAME_LIST
+                      }
+                  }
+              ]
+              actions = [
+                  {
+                      'Type': 'fixed-response',
+                      'Order': 1,
+                      'FixedResponseConfig': {
+                          'MessageBody': TARGET_MAINTENANCE_MESSAGE_HTML,
+                          'StatusCode': '503',
+                          'ContentType': 'text/html'
+                      },
+                  },
+              ]
+
+              if does_rule_exists:
+                  response = 'There is another rule with priority == 1. Please review the current alb setup!'
+              else:
+                  print('Creating maintenance page rule. OK')
+                  response = client.create_rule(ListenerArn=TARGET_ALB_LISTENER_ARN, Conditions=conditions, Actions=actions, Priority=priority)
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps(response)
+              }
+      Description: ''
+      MemorySize: 128
+      Timeout: 3
+      Role: !GetAtt StartMaintenancePageOnALBRole.Arn
+      Environment:
+        Variables:
+          TARGET_HOSTNAME_LIST: !Ref TARGETHOSTNAMELIST
+          TARGET_MAINTENANCE_MESSAGE_HTML: !Ref TARGETMAINTENANCEMESSAGEHTML
+          TARGET_ALB_LISTENER_ARN: !Ref TARGETALBLISTENERARN
+  StopMaintenancePageOnALB:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.stopmaintenancepageonalb_handler
+      Runtime: python3.7
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import boto3
+
+          def stopmaintenancepageonalb_handler(event, context):
+              client = boto3.client('elbv2')
+
+              TARGET_ALB_LISTENER_ARN = os.environ['TARGET_ALB_LISTENER_ARN']
+
+              priority = 1
+              does_rule_exists = False
+              target_rule_arn = ''
+
+              current_rules_response = client.describe_rules(ListenerArn=TARGET_ALB_LISTENER_ARN)
+              print (current_rules_response)
+              for rule in current_rules_response['Rules']:
+                  if rule['Priority'] == str(priority):
+                      actions = rule['Actions']
+                      for action in actions:
+                          if action['Type'] == 'fixed-response' and action['Order'] == 1:
+                              if action['FixedResponseConfig']['StatusCode'] == '503' and action['FixedResponseConfig']['ContentType'] == 'text/html':
+                                  does_rule_exists = True
+                                  target_rule_arn = rule['RuleArn']
+
+              if does_rule_exists:
+                  print('Deleting maintenance page rule....')
+                  response = client.delete_rule(RuleArn=target_rule_arn)
+              else:
+                  response = 'The maintenance page rule does not exists. Please review the current alb setup!'
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps(response)
+              }
+      Description: ''
+      MemorySize: 128
+      Timeout: 3
+      Role: !GetAtt StopMaintenancePageOnALBRole.Arn
+      Environment:
+        Variables:
+          TARGET_ALB_LISTENER_ARN: !Ref TARGETALBLISTENERARN
