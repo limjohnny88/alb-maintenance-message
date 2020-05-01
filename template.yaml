@@ -5,7 +5,7 @@ Description: Lambda function to start and stop the maintenance message on target
 Parameters:
   TARGETALBLISTENERARN:
     MinLength: 1
-    Description: The security group for the load balancer.
+    Description: The load balancer listener arn.
     Type: String
     Default: arn:aws:elasticloadbalancing:ap-southeast-1:322180973503:listener/app/test-alb/e613a3ad8cd9356b/7acbdd7aa70e5c96
   TARGETHOSTNAMELIST:
